@@ -1,0 +1,1 @@
+../../Resources/pyproj/_sync.pyi

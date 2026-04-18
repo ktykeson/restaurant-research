@@ -1,0 +1,62 @@
+<header class="view-header">
+    <h2>Cost &amp; usage
+        <button type="button" class="help-btn" data-tutorial-replay="cost"
+                aria-label="Replay tutorial" title="Show tutorial">?</button>
+    </h2>
+    <p class="sub">Lifetime Places API spend, recent activity, and cache effectiveness. Rate: <span id="cost-rate">$32</span> / 1k requests.</p>
+</header>
+
+<section class="cost-tiles">
+    <div class="cost-tile">
+        <div class="cost-tile-label">Total spent</div>
+        <div class="cost-tile-value" id="cost-total-usd">$0.00</div>
+        <div class="cost-tile-foot muted small"><span id="cost-total-requests">0</span> requests</div>
+    </div>
+    <div class="cost-tile">
+        <div class="cost-tile-label">Runs</div>
+        <div class="cost-tile-value" id="cost-total-runs">0</div>
+        <div class="cost-tile-foot muted small">lifetime</div>
+    </div>
+    <div class="cost-tile">
+        <div class="cost-tile-label">Leads found</div>
+        <div class="cost-tile-value" id="cost-total-leads">0</div>
+        <div class="cost-tile-foot muted small">
+            <span id="cost-total-nw">0</span> no-site ·
+            <span id="cost-total-so">0</span> social-only
+        </div>
+    </div>
+    <div class="cost-tile">
+        <div class="cost-tile-label">Cache hit rate</div>
+        <div class="cost-tile-value" id="cost-cache-rate">0%</div>
+        <div class="cost-tile-foot muted small"><span id="cost-cache-cached">0</span> cached / <span id="cost-cache-total">0</span></div>
+    </div>
+</section>
+
+<section class="cost-block">
+    <div class="cost-block-head">
+        <h3>Requests per day</h3>
+        <span class="muted small">Last <span id="cost-days">30</span> days</span>
+    </div>
+    <div id="cost-chart" class="cost-chart"></div>
+    <div id="cost-chart-empty" class="empty-state" hidden>No runs in this window.</div>
+</section>
+
+<section class="cost-block">
+    <div class="cost-block-head">
+        <h3>Cost by region</h3>
+        <span class="muted small">Multi-region runs split requests equally across their regions.</span>
+    </div>
+    <table class="cost-region-table">
+        <thead>
+        <tr>
+            <th>Region</th>
+            <th class="num">Runs</th>
+            <th class="num">Requests</th>
+            <th class="num">Cost</th>
+            <th class="num">Leads</th>
+        </tr>
+        </thead>
+        <tbody id="cost-region-body"></tbody>
+    </table>
+    <div id="cost-region-empty" class="empty-state" hidden>No region activity yet.</div>
+</section>

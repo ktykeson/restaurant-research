@@ -1,0 +1,1 @@
+../../Resources/shapely/_pygeos_api.pxd
