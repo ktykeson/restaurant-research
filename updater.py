@@ -30,8 +30,8 @@ from paths import resource_path, user_data_path
 # ---------------------------------------------------------------------------
 # IMPORTANT: set these to your actual GitHub repo before publishing a release.
 # Owner / repo of the public GitHub repo that hosts releases.
-GITHUB_OWNER = "REPLACE_ME_OWNER"
-GITHUB_REPO = "REPLACE_ME_REPO"
+GITHUB_OWNER = "ktykeson"
+GITHUB_REPO = "restaurant-research"
 # Name of the .dmg asset attached to each release. Must match build.sh.
 DMG_ASSET_NAME = "RestaurantResearch.dmg"
 # Name of the .app inside the DMG. Must match the PyInstaller BUNDLE name.
