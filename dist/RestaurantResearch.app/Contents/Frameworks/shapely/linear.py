@@ -1,1 +1,0 @@
-../../Resources/shapely/linear.py

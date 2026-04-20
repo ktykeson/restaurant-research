@@ -1,1 +1,0 @@
-../../Resources/shapely/__init__.py

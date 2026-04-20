@@ -1,1 +1,0 @@
-../../Resources/shapely/ops.py

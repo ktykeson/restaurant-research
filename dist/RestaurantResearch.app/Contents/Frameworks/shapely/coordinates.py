@@ -1,1 +1,0 @@
-../../Resources/shapely/coordinates.py

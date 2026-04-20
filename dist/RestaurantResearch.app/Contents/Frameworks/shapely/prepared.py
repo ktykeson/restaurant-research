@@ -1,1 +1,0 @@
-../../Resources/shapely/prepared.py

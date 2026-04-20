@@ -1,1 +1,0 @@
-../../Resources/pyproj/_show_versions.py

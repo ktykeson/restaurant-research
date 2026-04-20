@@ -4,6 +4,17 @@ __pycache__/
 .venv/
 venv/
 data/cache.sqlite
+data/cache.sqlite-shm
+data/cache.sqlite-wal
 data/runs/*.csv
-data/boundaries/*.geojson
+# NOTE: data/boundaries/*.geojson must be tracked — they are bundled
+# read-only resources (Swiss canton polygons) that PyInstaller copies
+# into the .app. Previously ignored because scripts/fetch_boundaries.py
+# regenerated them, but CI needs them present.
+build/
+dist/
+*.spec.backup
+app.iconset/
+# app.icns is auto-regenerated from assets/logo.png on every build.sh run.
+app.icns
 .DS_Store

@@ -1,1 +1,0 @@
-../../Resources/shapely/set_operations.py
