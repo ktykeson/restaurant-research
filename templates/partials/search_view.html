@@ -143,22 +143,29 @@
     <p class="sub">All leads ever discovered are cached locally. Searching again won't re-hit the API for places you've already seen.</p>
 
     <div class="lib-controls">
-        <input type="search" id="lib-search" placeholder="Search name, address, website…">
+        <input type="search" id="lib-search" placeholder="Search name, address, website, phone…">
         <div class="segmented" role="tablist" aria-label="Reviewed filter">
             <label><input type="radio" name="lib-reviewed" value="unreviewed" checked><span>To review</span></label>
             <label><input type="radio" name="lib-reviewed" value="reviewed"><span>Reviewed</span></label>
             <label><input type="radio" name="lib-reviewed" value="all"><span>All</span></label>
         </div>
+        <label class="lib-min-reviews" title="Hide listings with fewer than this many Google reviews — a cheap way to skip ghost/closed restaurants.">
+            Min reviews
+            <input type="number" id="lib-min-reviews" min="0" max="9999" step="1" value="3" class="inline-num">
+        </label>
         <button id="lib-refresh" type="button" class="btn-secondary">Refresh</button>
     </div>
 
-    <table>
+    <table class="lib-table">
         <thead>
         <tr>
             <th style="width: 36px">✓</th>
             <th>Name</th>
+            <th>Phone</th>
+            <th>Status</th>
+            <th>Notes</th>
+            <th title="Google review count">★</th>
             <th>Reason</th>
-            <th>Type</th>
             <th>Address</th>
             <th>Website</th>
             <th>Maps</th>

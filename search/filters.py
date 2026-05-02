@@ -15,11 +15,18 @@ SOCIAL_REGEX = re.compile(
 )
 
 
-def classify(place: dict) -> Optional[str]:
-    """Return 'no_website', 'social_only', 'has_site', or None to skip."""
+def classify(place: dict, min_reviews: int = 0) -> Optional[str]:
+    """Return 'no_website', 'social_only', 'has_site', or None to skip.
+
+    `min_reviews`: drop places with fewer than this many user ratings (0 = off).
+    Used as a cheap proxy for "still a real, active business" so the caller
+    doesn't waste time on ghost listings.
+    """
     status = place.get("businessStatus")
     if status and status != "OPERATIONAL":
         return None  # closed / temporarily closed
+    if min_reviews and (place.get("userRatingCount") or 0) < min_reviews:
+        return None
     uri = (place.get("websiteUri") or "").strip()
     if not uri:
         return "no_website"

@@ -16,6 +16,8 @@ PLACES_HOST = "https://places.googleapis.com/v1/places"
 
 # Field mask — every field we need lives in one search response. websiteUri
 # bumps billing to Place Details Pro tier (~$32/1k); accepted cost.
+# Phone + userRatingCount are also Pro-tier — no SKU change. (Adding
+# `places.reviews` would jump to Enterprise SKU; intentionally omitted.)
 FIELD_MASK = ",".join([
     "places.id",
     "places.displayName",
@@ -26,6 +28,9 @@ FIELD_MASK = ",".join([
     "places.primaryType",
     "places.businessStatus",
     "places.formattedAddress",
+    "places.nationalPhoneNumber",
+    "places.internationalPhoneNumber",
+    "places.userRatingCount",
     "nextPageToken",
 ])
 

@@ -510,3 +510,38 @@
     .run-actions { flex-direction: column; align-items: stretch; }
     .run-hint { margin-left: 0; }
 }
+
+/* ---------- Library CRM fields ---------- */
+
+.lib-min-reviews {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: 4px;
+}
+.lib-min-reviews .inline-num {
+    width: 56px;
+    padding: 4px 6px;
+    font-size: 12px;
+}
+
+.lib-table td .lib-status,
+.lib-table td .lib-notes {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 6px;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text, inherit);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+.lib-table td .lib-status:focus,
+.lib-table td .lib-notes:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.lib-table td.lib-phone a { white-space: nowrap; }
+.lib-table tr.is-reviewed td .lib-notes { opacity: .85; }

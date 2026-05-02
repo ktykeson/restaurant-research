@@ -308,6 +308,10 @@ def api_export(job_id: str):
         "formattedAddress": r["address"],
         "primaryType": r["primary_type"],
         "location": {"latitude": r["lat"], "longitude": r["lng"]},
+        "nationalPhoneNumber": r.get("phone") or "",
+        "internationalPhoneNumber": r.get("international_phone") or "",
+        "userRatingCount": r.get("user_rating_count"),
+        "businessStatus": r.get("business_status") or "",
     }, r["reason"]) for r in rows]
     path = RUNS_DIR / f"run-{job_id}.csv"
     exporter.write_csv(out_rows, path)
@@ -353,8 +357,17 @@ def api_leads():
         offset = max(int(request.args.get("offset", 0)), 0)
     except ValueError:
         limit, offset = 500, 0
+    try:
+        min_reviews = max(int(request.args.get("min_reviews", 0)), 0)
+    except ValueError:
+        min_reviews = 0
+    call_status = request.args.get("call_status") or None
+    if call_status and call_status not in cache.CALL_STATUSES:
+        call_status = None
     rows, total = cache.list_leads(search=search, reviewed=reviewed,
-                                    limit=limit, offset=offset)
+                                    limit=limit, offset=offset,
+                                    min_reviews=min_reviews,
+                                    call_status=call_status)
     return jsonify({"rows": rows, "total": total, "limit": limit, "offset": offset})
 
 
@@ -367,6 +380,29 @@ def api_set_reviewed(place_id: str):
     if not ok:
         return jsonify({"error": "place not found"}), 404
     return jsonify({"ok": True, "place_id": place_id, "reviewed": reviewed})
+
+
+@app.route("/api/leads/<place_id>/call", methods=["PATCH", "POST"])
+def api_set_call(place_id: str):
+    """Inline CRM update: set call_status and/or notes for a lead."""
+    body = request.get_json(silent=True) or {}
+    status = body.get("status")
+    notes = body.get("notes")
+    if status is None and notes is None:
+        return jsonify({"error": "Provide 'status' and/or 'notes'"}), 400
+    try:
+        ok = cache.set_call_status(place_id, status=status, notes=notes)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if not ok:
+        return jsonify({"error": "place not found"}), 404
+    return jsonify({"ok": True, "place_id": place_id,
+                    "status": status, "notes": notes})
+
+
+@app.route("/api/call-statuses")
+def api_call_statuses():
+    return jsonify({"statuses": list(cache.CALL_STATUSES)})
 
 
 def _enrich_run(run: dict) -> dict:
@@ -429,7 +465,13 @@ def api_export_run(run_id: str):
             if reason not in ("no_website", "social_only"):
                 continue
             seen.add(pid)
-            out_rows.append(exporter.row_from_place(place, reason))
+            # Pull the cached lead row so the CSV carries phone/notes/call_status
+            # (the raw API JSON in `place` lacks the CRM fields the user typed).
+            lead = cache.get_place(pid)
+            if lead is not None:
+                out_rows.append(exporter.row_from_db(lead, reason))
+            else:
+                out_rows.append(exporter.row_from_place(place, reason))
 
     path = RUNS_DIR / f"run-{run_id}.csv"
     exporter.write_csv(out_rows, path)

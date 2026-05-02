@@ -22,21 +22,25 @@ DB_PATH = writable_path("cache.sqlite")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS places (
-    place_id      TEXT PRIMARY KEY,
-    name          TEXT,
-    website_uri   TEXT,
-    maps_uri      TEXT,
-    lat           REAL,
-    lng           REAL,
-    address       TEXT,
-    primary_type  TEXT,
-    types_json    TEXT,
-    business_status TEXT,
-    raw_json      TEXT NOT NULL,
-    fetched_at    INTEGER NOT NULL,
-    reviewed      INTEGER NOT NULL DEFAULT 0,
-    reviewed_at   INTEGER,
-    notes         TEXT
+    place_id           TEXT PRIMARY KEY,
+    name               TEXT,
+    website_uri        TEXT,
+    maps_uri           TEXT,
+    lat                REAL,
+    lng                REAL,
+    address            TEXT,
+    primary_type       TEXT,
+    types_json         TEXT,
+    business_status    TEXT,
+    phone              TEXT,
+    international_phone TEXT,
+    user_rating_count  INTEGER,
+    call_status        TEXT NOT NULL DEFAULT 'not_called',
+    raw_json           TEXT NOT NULL,
+    fetched_at         INTEGER NOT NULL,
+    reviewed           INTEGER NOT NULL DEFAULT 0,
+    reviewed_at        INTEGER,
+    notes              TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_places_website ON places(website_uri);
@@ -94,7 +98,7 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with _connect() as conn:
         conn.executescript(SCHEMA)
-        # Migrations for pre-existing DBs that lack the review columns.
+        # Additive migrations for pre-existing DBs.
         existing = {r[1] for r in conn.execute("PRAGMA table_info(places)").fetchall()}
         if "reviewed" not in existing:
             conn.execute("ALTER TABLE places ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0")
@@ -102,7 +106,18 @@ def init_db() -> None:
             conn.execute("ALTER TABLE places ADD COLUMN reviewed_at INTEGER")
         if "notes" not in existing:
             conn.execute("ALTER TABLE places ADD COLUMN notes TEXT")
+        if "phone" not in existing:
+            conn.execute("ALTER TABLE places ADD COLUMN phone TEXT")
+        if "international_phone" not in existing:
+            conn.execute("ALTER TABLE places ADD COLUMN international_phone TEXT")
+        if "user_rating_count" not in existing:
+            conn.execute("ALTER TABLE places ADD COLUMN user_rating_count INTEGER")
+        if "call_status" not in existing:
+            conn.execute(
+                "ALTER TABLE places ADD COLUMN call_status TEXT NOT NULL DEFAULT 'not_called'"
+            )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_places_reviewed ON places(reviewed)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_places_call_status ON places(call_status)")
 
 
 @contextmanager
@@ -128,8 +143,9 @@ def upsert_place(place: dict) -> bool:
             """
             INSERT INTO places (place_id, name, website_uri, maps_uri, lat, lng,
                                 address, primary_type, types_json, business_status,
+                                phone, international_phone, user_rating_count,
                                 raw_json, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(place_id) DO UPDATE SET
                 name=excluded.name,
                 website_uri=excluded.website_uri,
@@ -140,6 +156,9 @@ def upsert_place(place: dict) -> bool:
                 primary_type=excluded.primary_type,
                 types_json=excluded.types_json,
                 business_status=excluded.business_status,
+                phone=excluded.phone,
+                international_phone=excluded.international_phone,
+                user_rating_count=excluded.user_rating_count,
                 raw_json=excluded.raw_json,
                 fetched_at=excluded.fetched_at
             """,
@@ -154,6 +173,9 @@ def upsert_place(place: dict) -> bool:
                 place.get("primaryType"),
                 json.dumps(place.get("types") or []),
                 place.get("businessStatus"),
+                place.get("nationalPhoneNumber"),
+                place.get("internationalPhoneNumber"),
+                place.get("userRatingCount"),
                 json.dumps(place),
                 int(time.time()),
             ),
@@ -201,7 +223,9 @@ def places_in_bbox(bbox: tuple[float, float, float, float]) -> list[dict]:
 
 
 def list_leads(search: str = "", reviewed: str = "all",
-               limit: int = 500, offset: int = 0) -> tuple[list[dict], int]:
+               limit: int = 500, offset: int = 0,
+               min_reviews: int = 0,
+               call_status: Optional[str] = None) -> tuple[list[dict], int]:
     """Return (rows, total) of lead-eligible places — operational + (no website or social-only).
 
     - `search` matches name/address/website_uri (case-insensitive, LIKE %term%).
@@ -233,10 +257,18 @@ def list_leads(search: str = "", reviewed: str = "all",
     elif reviewed == "unreviewed":
         clauses.append("reviewed = 0")
 
+    if min_reviews and min_reviews > 0:
+        clauses.append("(user_rating_count IS NOT NULL AND user_rating_count >= ?)")
+        params.append(int(min_reviews))
+
+    if call_status:
+        clauses.append("call_status = ?")
+        params.append(call_status)
+
     if search:
-        clauses.append("(name LIKE ? OR address LIKE ? OR website_uri LIKE ?)")
+        clauses.append("(name LIKE ? OR address LIKE ? OR website_uri LIKE ? OR phone LIKE ?)")
         term = f"%{search}%"
-        params.extend([term, term, term])
+        params.extend([term, term, term, term])
 
     where = " AND ".join(clauses)
 
@@ -246,7 +278,9 @@ def list_leads(search: str = "", reviewed: str = "all",
 
         cur.execute(
             f"""SELECT place_id, name, website_uri, maps_uri, address, primary_type,
-                       lat, lng, reviewed, reviewed_at, notes, fetched_at
+                       lat, lng, reviewed, reviewed_at, notes, fetched_at,
+                       phone, international_phone, user_rating_count, call_status,
+                       business_status
                 FROM places WHERE {where}
                 ORDER BY reviewed ASC, fetched_at DESC
                 LIMIT ? OFFSET ?""",
@@ -270,9 +304,85 @@ def list_leads(search: str = "", reviewed: str = "all",
                 "reviewed_at": r[9],
                 "notes": r[10] or "",
                 "fetched_at": r[11],
+                "phone": r[12] or "",
+                "international_phone": r[13] or "",
+                "user_rating_count": r[14],
+                "call_status": r[15] or "not_called",
+                "business_status": r[16] or "",
                 "reason": reason,
             })
         return rows, total
+
+
+CALL_STATUSES = (
+    "not_called",
+    "no_answer",
+    "not_interested",
+    "callback",
+    "closed",
+    "won",
+)
+
+
+def set_call_status(place_id: str, status: Optional[str] = None,
+                    notes: Optional[str] = None) -> bool:
+    """Update call_status and/or notes for a lead. Touching either field also
+    flips `reviewed=1` so it disappears from the default 'To review' filter."""
+    fields: list[str] = []
+    params: list = []
+    if status is not None:
+        if status not in CALL_STATUSES:
+            raise ValueError(f"unknown call_status: {status}")
+        fields.append("call_status = ?")
+        params.append(status)
+    if notes is not None:
+        fields.append("notes = ?")
+        params.append(notes)
+    if not fields:
+        return False
+    fields.append("reviewed = 1")
+    fields.append("reviewed_at = ?")
+    params.append(int(time.time()))
+    params.append(place_id)
+    with cursor() as cur:
+        cur.execute(
+            f"UPDATE places SET {', '.join(fields)} WHERE place_id = ?",
+            params,
+        )
+        return cur.rowcount > 0
+
+
+def get_place(place_id: str) -> Optional[dict]:
+    """Fetch the cached row for a single place (used by the per-run CSV export
+    to attach phone/notes/call_status to lead rows)."""
+    with cursor() as cur:
+        cur.execute(
+            """SELECT place_id, name, website_uri, maps_uri, address, primary_type,
+                      lat, lng, phone, international_phone, user_rating_count,
+                      call_status, notes, business_status, raw_json
+               FROM places WHERE place_id = ?""",
+            (place_id,),
+        )
+        r = cur.fetchone()
+        if not r:
+            return None
+        return {
+            "place_id": r[0],
+            "name": r[1] or "",
+            "website_uri": r[2] or "",
+            "maps_link": r[3] or "",
+            "address": r[4] or "",
+            "primary_type": r[5] or "",
+            "lat": r[6],
+            "lng": r[7],
+            "phone": r[8] or "",
+            "international_phone": r[9] or "",
+            "user_rating_count": r[10],
+            "call_status": r[11] or "not_called",
+            "notes": r[12] or "",
+            "business_status": r[13] or "",
+            "raw_json": r[14],
+        }
 
 
 def set_reviewed(place_id: str, reviewed: bool, notes: Optional[str] = None) -> bool:

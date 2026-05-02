@@ -281,4 +281,8 @@ async def _ingest_place(place: dict, region: Region, polygon, config: CrawlConfi
         "reason": reason,
         "lat": lat,
         "lng": lng,
+        "phone": place.get("nationalPhoneNumber") or "",
+        "international_phone": place.get("internationalPhoneNumber") or "",
+        "user_rating_count": place.get("userRatingCount"),
+        "business_status": place.get("businessStatus") or "",
     })
