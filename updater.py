@@ -252,3 +252,57 @@ def pop_update_marker() -> Optional[str]:
         return v or None
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# User-triggered apply: called from the in-app "Update now" banner.
+
+def schedule_relaunch() -> bool:
+    """Schedule the running app to quit and relaunch via the macOS `open`
+    command. The next launch picks up the staged update via the launcher's
+    pending-update applier — no in-process bundle replacement, which is
+    unsafe while Python imports are mid-flight.
+
+    Returns True if the relaunch was scheduled, False otherwise.
+    """
+    if not getattr(sys, "frozen", False) or sys.platform != "darwin":
+        return False
+
+    # Locate the bundle we're running from.
+    exe = Path(sys.executable).resolve()
+    try:
+        bundle = next(p for p in exe.parents if p.suffix == ".app")
+    except StopIteration:
+        return False
+
+    # Detached helper: wait for parent to exit, then re-open the bundle.
+    # `open -n -a` opens a fresh instance; `nohup` + `setsid`-equivalent via
+    # start_new_session detaches from this process group so killing us
+    # doesn't kill the helper.
+    try:
+        import subprocess
+        subprocess.Popen(
+            ["/bin/sh", "-c", f"sleep 1.5 && /usr/bin/open -n -a {str(bundle)!r}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except Exception:
+        return False
+
+    # Tell pywebview to close the window. The Python process exits when the
+    # cocoa runloop returns; the helper above then re-opens us.
+    try:
+        import webview
+        for w in list(webview.windows):
+            try:
+                w.destroy()
+            except Exception:
+                pass
+    except Exception:
+        # Hard fallback if pywebview isn't importable here.
+        import os, threading
+        threading.Timer(0.3, lambda: os._exit(0)).start()
+    return True

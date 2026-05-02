@@ -97,6 +97,97 @@ async function safeInit(name, fn) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// In-app update banner. The updater downloads new releases silently in the
+// background; once a build is staged we show a non-blocking banner with
+// "Update now" / "Later" so the user is in control of the restart moment.
+
+const UPDATE_DISMISS_KEY = "rr-update-dismissed-version";
+
+function renderUpdateBanner(version) {
+    if (document.getElementById("rr-update-banner")) return;
+    const bar = document.createElement("div");
+    bar.id = "rr-update-banner";
+    bar.setAttribute("role", "status");
+    bar.style.cssText = [
+        "position:fixed", "top:0", "left:0", "right:0",
+        "z-index:10000",
+        "padding:10px 16px",
+        "background:linear-gradient(90deg,#1d3a6b,#2453a6)",
+        "color:#fff",
+        "font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif",
+        "display:flex", "align-items:center", "justify-content:center",
+        "gap:14px",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.35)",
+    ].join(";");
+    bar.innerHTML = `
+        <span><strong>Version ${version}</strong> is ready to install.</span>
+        <button id="rr-update-now"
+            style="background:#fff;color:#1d3a6b;border:none;padding:5px 14px;border-radius:5px;font-weight:600;cursor:pointer;font-size:12.5px">
+            Update now
+        </button>
+        <button id="rr-update-later"
+            style="background:transparent;color:#cfdcef;border:1px solid #6f8bbf;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:12.5px">
+            Later
+        </button>
+    `;
+    document.body.appendChild(bar);
+
+    // Push the app shell down so the banner doesn't overlap content.
+    document.body.style.paddingTop = `${bar.offsetHeight}px`;
+
+    bar.querySelector("#rr-update-later").addEventListener("click", () => {
+        try { sessionStorage.setItem(UPDATE_DISMISS_KEY, version); } catch {}
+        bar.remove();
+        document.body.style.paddingTop = "";
+    });
+
+    bar.querySelector("#rr-update-now").addEventListener("click", async () => {
+        const btn = bar.querySelector("#rr-update-now");
+        btn.disabled = true;
+        btn.textContent = "Restarting…";
+        try {
+            const r = await fetch("/api/updates/apply", { method: "POST" });
+            const data = await r.json().catch(() => ({}));
+            if (data.manual_restart_required) {
+                btn.textContent = "Quit & reopen to apply";
+                btn.disabled = false;
+                return;
+            }
+            // The server is about to kill the webview window. Show feedback
+            // until the process actually exits.
+            bar.querySelector("#rr-update-later").remove();
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = "Update now";
+            alert("Couldn't apply the update: " + (err.message || err));
+        }
+    });
+}
+
+async function pollUpdateStatus() {
+    try {
+        const r = await fetch("/api/updates/status", { cache: "no-store" });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!data.staged || !data.version) return;
+        // Respect a per-session "Later" click for the same version.
+        let dismissed = null;
+        try { dismissed = sessionStorage.getItem(UPDATE_DISMISS_KEY); } catch {}
+        if (dismissed === data.version) return;
+        renderUpdateBanner(data.version);
+    } catch (_) {
+        // Silent — we'll retry on the next poll.
+    }
+}
+
+function startUpdatePolling() {
+    // Initial check after 5s so we don't compete with first paint, then
+    // every 90s — the staged file appears at most once per launch.
+    setTimeout(pollUpdateStatus, 5000);
+    setInterval(pollUpdateStatus, 90000);
+}
+
 async function boot() {
     installDebugStrip();
     // Sidebar first — even if a downstream init throws, nav must work.
@@ -108,6 +199,7 @@ async function boot() {
         safeInit("library", initLibrary),
     ]);
     safeInit("tutorial", initTutorial);
+    safeInit("update-poller", startUpdatePolling);
     if (shouldAutoStartSearch()) {
         requestAnimationFrame(() => {
             try { startSearchTutorial(); } catch (err) { console.error("tutorial", err); }

@@ -134,6 +134,41 @@ def api_clear_config_key():
     return jsonify({"ok": True})
 
 
+@app.route("/api/updates/status")
+def api_updates_status():
+    """Reports whether a downloaded update is staged and ready to install.
+
+    The frontend polls this and shows a banner when staged=true. The actual
+    download happens silently in the background on launch (updater thread).
+    """
+    import updater
+    info = updater.pending_update_info()
+    if info is None:
+        return jsonify({"staged": False, "version": None,
+                        "current": updater.current_version()})
+    _, version = info
+    return jsonify({
+        "staged": True,
+        "version": version,
+        "current": updater.current_version(),
+    })
+
+
+@app.route("/api/updates/apply", methods=["POST"])
+def api_updates_apply():
+    """User clicked 'Update now'. Schedule a relaunch — the next launch will
+    apply the staged update via the launcher's pending-update applier."""
+    import updater
+    if updater.pending_update_info() is None:
+        return jsonify({"error": "no update staged"}), 409
+    if not updater.schedule_relaunch():
+        return jsonify({
+            "error": "Update is downloaded. Quit and reopen the app to apply it.",
+            "manual_restart_required": True,
+        }), 200
+    return jsonify({"ok": True, "relaunching": True})
+
+
 @app.route("/api/regions", methods=["GET"])
 def api_list_regions():
     return jsonify([r.to_api_dict() for r in regions_mod.list_regions()])
