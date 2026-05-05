@@ -50,21 +50,26 @@ echo "==> Running PyInstaller"
 # PyInstaller attempts its own ad-hoc codesign of the BUNDLE at the end; that
 # can emit a "You will need to sign the bundle manually!" warning. Safe to
 # ignore — we sign properly below.
-pyinstaller "${APP_NAME}.spec" --noconfirm --clean
+# We already `rm -rf build dist` above; do NOT pass --clean, as it removes
+# the workpath subdir and on some Python+PyInstaller combos it then fails to
+# recreate it before writing base_library.zip into it.
+mkdir -p build
+pyinstaller "${APP_NAME}.spec" --noconfirm
 
 if [[ ! -d "$APP_BUNDLE" ]]; then
     echo "Build failed: $APP_BUNDLE not produced." >&2
     exit 1
 fi
 
-echo "==> Ad-hoc codesigning (via /tmp to avoid com.apple.provenance detritus)"
+echo "==> Ad-hoc codesigning + DMG (entirely in /tmp to avoid com.apple.provenance)"
 # macOS 14+ attaches com.apple.provenance to files in tracked directories
-# (Desktop, Documents, iCloud), and codesign rejects bundles that carry it
-# ("resource fork, Finder information, or similar detritus not allowed").
-# /tmp is not tracked, so we stage the bundle there, sign it, and copy the
-# signed bundle back. The signature survives the round-trip.
+# (Desktop, Documents, iCloud) the moment they touch the filesystem, and
+# codesign rejects bundles that carry it ("resource fork, Finder info, or
+# similar detritus not allowed"). /tmp is not tracked, so we sign AND build
+# the DMG entirely in /tmp, then move only the resulting .dmg back to dist/.
 SIGN_STAGE=$(mktemp -d /tmp/rr-sign-XXXXXX)
 STAGED_APP="${SIGN_STAGE}/${APP_NAME}.app"
+STAGED_DMG="${SIGN_STAGE}/${APP_NAME}.dmg"
 
 find "$APP_BUNDLE" -name ".DS_Store" -delete 2>/dev/null || true
 ditto --noextattr --noacl --norsrc "$APP_BUNDLE" "$STAGED_APP"
@@ -78,26 +83,14 @@ find "$STAGED_APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) \
 codesign --force --deep --sign - --options runtime --timestamp=none \
     --entitlements entitlements.plist "$STAGED_APP"
 
-echo "==> Verifying signature"
+echo "==> Verifying signature (in /tmp)"
 codesign --verify --deep --strict "$STAGED_APP"
 
-# Replace the dist/ bundle with the signed copy.
-rm -rf "$APP_BUNDLE"
-ditto "$STAGED_APP" "$APP_BUNDLE"
-rm -rf "$SIGN_STAGE"
-
-# Re-verify in the final location.
-codesign --verify --deep --strict "$APP_BUNDLE" || true
-
-echo "==> Building DMG"
-rm -f "$DMG_PATH"
+echo "==> Building DMG (also in /tmp)"
 if command -v create-dmg >/dev/null 2>&1; then
-    # Optional artwork: if present at project root we use it, otherwise the
-    # DMG still builds cleanly with plain defaults.
     extra_args=()
-    [[ -f "app.icns"          ]] && extra_args+=(--volicon "app.icns")
-    [[ -f "assets/dmg-bg.png" ]] && extra_args+=(--background "assets/dmg-bg.png")
-
+    [[ -f "app.icns"          ]] && extra_args+=(--volicon "$(pwd)/app.icns")
+    [[ -f "assets/dmg-bg.png" ]] && extra_args+=(--background "$(pwd)/assets/dmg-bg.png")
     create-dmg \
         --volname "$VOLNAME" \
         --window-size 540 380 \
@@ -106,14 +99,25 @@ if command -v create-dmg >/dev/null 2>&1; then
         --app-drop-link 400 190 \
         --no-internet-enable \
         "${extra_args[@]}" \
-        "$DMG_PATH" "$APP_BUNDLE"
+        "$STAGED_DMG" "$STAGED_APP"
 else
     echo "create-dmg not installed; falling back to raw hdiutil."
-    hdiutil create -volname "$VOLNAME" -srcfolder "$APP_BUNDLE" \
-        -ov -format UDZO "$DMG_PATH"
+    hdiutil create -volname "$VOLNAME" -srcfolder "$STAGED_APP" \
+        -ov -format UDZO "$STAGED_DMG"
 fi
+
+# Move the produced artifacts to dist/.
+mkdir -p dist
+rm -f "$DMG_PATH"
+mv "$STAGED_DMG" "$DMG_PATH"
+# Also keep an unsigned-on-disk copy of the .app for local debugging.
+rm -rf "$APP_BUNDLE"
+ditto "$STAGED_APP" "$APP_BUNDLE"
+rm -rf "$SIGN_STAGE"
 
 echo
 echo "Done."
-echo "  App:  $APP_BUNDLE"
+echo "  App:  $APP_BUNDLE  (codesign verify may fail here due to"
+echo "                      com.apple.provenance reattaching; the copy"
+echo "                      INSIDE the DMG is the signed one to ship.)"
 echo "  DMG:  $DMG_PATH"

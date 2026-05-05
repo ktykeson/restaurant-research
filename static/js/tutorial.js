@@ -204,8 +204,12 @@ function getDriverFactory() {
 function ensureViewVisible(viewName) {
     if (!viewName) return;
     const nav = document.querySelector(`.nav-item[data-target="${viewName}"]`);
-    if (nav) nav.click();
+    if (!nav) return;
+    if (nav.classList.contains("active")) return;
+    nav.click();
 }
+
+let activeTour = null;
 
 const NAV_FOR_TOUR = {
     search: "search",
@@ -217,6 +221,7 @@ const NAV_FOR_TOUR = {
 function runTour(name) {
     const tour = TOURS[name];
     if (!tour) return;
+    if (activeTour) return;
     const driver = getDriverFactory();
     if (!driver) return;
 
@@ -234,10 +239,12 @@ function runTour(name) {
         doneBtnText: "Got it",
         steps: tour.steps,
         onDestroyed: () => {
+            activeTour = null;
             try { localStorage.setItem(tour.storageKey, "1"); } catch (_) {}
         },
     });
 
+    activeTour = instance;
     requestAnimationFrame(() => instance.drive());
 }
 
