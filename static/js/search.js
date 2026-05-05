@@ -542,9 +542,24 @@ async function stopSearch() {
     }
 }
 
-function downloadCsv() {
+async function downloadCsv() {
     if (!currentJobId) return;
-    window.location.href = `/api/jobs/${currentJobId}/export`;
+    const btn = $("#export");
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+        const r = await fetch(`/api/jobs/${currentJobId}/export`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        btn.textContent = "Saved to Downloads";
+        appendLog(`CSV saved: ${data.path}`);
+    } catch (err) {
+        btn.textContent = original;
+        alert("Couldn't save CSV: " + (err.message || err));
+        return;
+    }
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
 }
 
 // ---------- Results / Library tabs ----------

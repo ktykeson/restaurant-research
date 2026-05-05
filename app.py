@@ -4,12 +4,15 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import shutil
+import subprocess
 import sys
 import threading
 import time
 import uuid
+from pathlib import Path
 
-from flask import Flask, Response, jsonify, redirect, render_template, request, send_file
+from flask import Flask, Response, jsonify, redirect, render_template, request
 
 import config
 from paths import resource_path, writable_path
@@ -37,6 +40,31 @@ RUNS_DIR = writable_path("runs")
 # In-memory job registry — fine for a single-user local tool.
 JOBS: dict[str, dict] = {}
 SENTINEL = object()
+
+
+def _deliver_csv(src: Path, download_name: str):
+    """Copy a CSV to the user's Downloads folder and reveal it in Finder.
+
+    The app runs inside a pywebview/WKWebView shell that has no native
+    download manager, so `send_file(as_attachment=True)` opens the CSV in
+    Preview/Quick Look instead of saving it. Writing to ~/Downloads and
+    revealing in Finder gives the user an unambiguous "downloaded" file.
+    """
+    downloads = Path.home() / "Downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    dest = downloads / download_name
+    stem, suffix = dest.stem, dest.suffix
+    i = 1
+    while dest.exists():
+        dest = downloads / f"{stem} ({i}){suffix}"
+        i += 1
+    shutil.copyfile(src, dest)
+    if sys.platform == "darwin":
+        try:
+            subprocess.Popen(["open", "-R", str(dest)])
+        except Exception:
+            pass
+    return jsonify({"ok": True, "path": str(dest), "name": dest.name})
 
 
 def _resolve_text_queries(region_ids: list[str], profile_override: list[str] | None) -> list[str]:
@@ -350,8 +378,7 @@ def api_export(job_id: str):
     }, r["reason"]) for r in rows]
     path = RUNS_DIR / f"run-{job_id}.csv"
     exporter.write_csv(out_rows, path)
-    return send_file(path, as_attachment=True, download_name=path.name,
-                     mimetype="text/csv")
+    return _deliver_csv(path, path.name)
 
 
 @app.route("/api/estimate", methods=["POST"])
@@ -510,8 +537,7 @@ def api_export_run(run_id: str):
 
     path = RUNS_DIR / f"run-{run_id}.csv"
     exporter.write_csv(out_rows, path)
-    return send_file(path, as_attachment=True, download_name=path.name,
-                     mimetype="text/csv")
+    return _deliver_csv(path, path.name)
 
 
 @app.route("/api/usage/summary")

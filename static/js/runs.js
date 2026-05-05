@@ -61,11 +61,33 @@ function renderRun(row, tbody) {
             <br><small class="muted">${row.no_website || 0} / ${row.social_only || 0}</small>
         </td>
         <td>
-            <a class="btn-link run-export" href="/api/runs/${encodeURIComponent(row.id)}/export"
-               download>CSV</a>
+            <button type="button" class="btn-link run-export"
+                    data-run-id="${escapeHtml(row.id)}">CSV</button>
         </td>
     `;
     tbody.appendChild(tr);
+    tr.querySelector(".run-export").addEventListener("click", (e) => {
+        exportRunCsv(e.currentTarget);
+    });
+}
+
+async function exportRunCsv(btn) {
+    const id = btn.dataset.runId;
+    if (!id) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+        const r = await fetch(`/api/runs/${encodeURIComponent(id)}/export`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await r.json();
+        btn.textContent = "Saved";
+    } catch (err) {
+        btn.textContent = original;
+        alert("Couldn't save CSV: " + (err.message || err));
+        return;
+    }
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
 }
 
 export async function loadRuns() {
